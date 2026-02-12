@@ -1,0 +1,20 @@
+# Models
+models/
+
+# Benchmark results
+results/
+
+# Python
+bench/.venv/
+__pycache__/
+*.pyc
+
+# Rust
+bench/burn/target/
+
+# Swift
+bench/swift/.build/
+bench/swift/Package.resolved
+
+# macOS
+.DS_Store

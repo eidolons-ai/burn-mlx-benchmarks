@@ -1,0 +1,34 @@
+{
+  "config": {
+    "max_new_tokens": 256,
+    "timed_iterations": 3,
+    "warmup_iterations": 1,
+    "sleep_between_runs_secs": 2,
+    "temperature": 0.0
+  },
+  "warmup": {
+    "id": "warmup",
+    "system_prompt": "You are a helpful assistant.",
+    "user_message": "Hi"
+  },
+  "prompts": [
+    {
+      "id": "short",
+      "label": "Short (~20 input tokens)",
+      "system_prompt": "You are a helpful assistant.",
+      "user_message": "What is the capital of France?"
+    },
+    {
+      "id": "medium",
+      "label": "Medium (~100 input tokens)",
+      "system_prompt": "You are a helpful assistant.",
+      "user_message": "Explain the key differences between compiled and interpreted programming languages. Cover performance characteristics, development workflow, and give two examples of each type."
+    },
+    {
+      "id": "long",
+      "label": "Long (~500 input tokens)",
+      "system_prompt": "You are a senior software architect reviewing a design document.",
+      "user_message": "Review the following proposed architecture for a real-time collaborative document editor:\n\nThe system uses a client-server model where each client maintains a local copy of the document. Changes are sent to the server via WebSocket connections. The server maintains the authoritative document state in PostgreSQL and broadcasts changes to all connected clients.\n\nFor conflict resolution, we plan to use Operational Transformation (OT) with a central server acting as the transformation coordinator. Each operation is assigned a monotonically increasing sequence number by the server. Clients must transform their pending operations against any operations they receive from the server before applying them locally.\n\nThe document is stored as a flat array of characters with inline formatting marks. We chose this over a tree-based CRDT approach because OT is simpler to implement and the central server model fits our existing infrastructure.\n\nFor persistence, we store the full document state every 100 operations and keep an operation log for the last 10,000 operations. Recovery involves loading the last snapshot and replaying subsequent operations.\n\nPlease identify potential issues with this architecture and suggest improvements, focusing on scalability, correctness, and operational complexity."
+    }
+  ]
+}
