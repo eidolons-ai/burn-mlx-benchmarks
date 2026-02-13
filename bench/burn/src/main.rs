@@ -331,6 +331,15 @@ fn main() {
         run_bench::<B>(args, device, "burn-wgpu", "float16");
     }
 
+    #[cfg(feature = "metal")]
+    {
+        use burn::backend::wgpu::WgpuDevice;
+        use burn::backend::Wgpu;
+        type B = Wgpu<half::f16, i32>;
+        let device = WgpuDevice::DefaultDevice;
+        run_bench::<B>(args, device, "burn-metal", "float16");
+    }
+
     #[cfg(feature = "mlx")]
     {
         use burn_mlx::{Mlx, MlxDevice};
@@ -338,10 +347,10 @@ fn main() {
         run_bench::<Mlx>(args, device, "burn-mlx", "float32");
     }
 
-    #[cfg(not(any(feature = "wgpu", feature = "mlx")))]
+    #[cfg(not(any(feature = "wgpu", feature = "metal", feature = "mlx")))]
     {
         let _ = args;
-        eprintln!("No backend enabled. Build with --features wgpu or --features mlx");
+        eprintln!("No backend enabled. Build with --features wgpu, --features metal, or --features mlx");
         std::process::exit(1);
     }
 }

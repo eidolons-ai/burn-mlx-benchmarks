@@ -61,9 +61,23 @@ else
     echo "  WARNING: Burn/WGPU build may have failed."
 fi
 
+echo "Building Burn/Metal benchmark (release)..."
+(cd "$BENCH_DIR/burn" && cargo build --release --features metal 2>&1 | tail -1)
+cp -f "$BENCH_DIR/burn/target/release/burn-bench" "$BENCH_DIR/burn/target/release/burn-bench-metal" 2>/dev/null || true
+if [ -f "$BENCH_DIR/burn/target/release/burn-bench-metal" ]; then
+    echo "  burn-bench-metal: OK"
+else
+    echo "  WARNING: Burn/Metal build may have failed."
+fi
+
 echo "Building Burn/MLX benchmark (release)..."
 (cd "$BENCH_DIR/burn" && cargo build --release --features mlx 2>&1 | tail -1)
 cp -f "$BENCH_DIR/burn/target/release/burn-bench" "$BENCH_DIR/burn/target/release/burn-bench-mlx" 2>/dev/null || true
+# MLX needs its Metal shader library (mlx.metallib) colocated with the binary
+METALLIB="$(find "$BENCH_DIR/burn/target/release/build" -path '*/mlx-sys-burn-*/out/build/lib/mlx.metallib' -print -quit 2>/dev/null)"
+if [ -n "$METALLIB" ]; then
+    cp -f "$METALLIB" "$BENCH_DIR/burn/target/release/mlx.metallib"
+fi
 if [ -f "$BENCH_DIR/burn/target/release/burn-bench-mlx" ]; then
     echo "  burn-bench-mlx: OK"
 else
