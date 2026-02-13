@@ -265,7 +265,8 @@ def cmd_report(args):
             means.append(arr.mean())
             stds.append(arr.std())
 
-        bars = ax.bar(x_pos, means, yerr=stds, capsize=5, color=["#e74c3c", "#3498db", "#2ecc71"][:len(frameworks)])
+        palette = ["#e74c3c", "#3498db", "#2ecc71", "#9b59b6", "#f39c12"]
+        bars = ax.bar(x_pos, means, yerr=stds, capsize=5, color=palette[:len(frameworks)])
         ax.set_xticks(x_pos)
         ax.set_xticklabels(frameworks)
         ax.set_ylabel("Decode Throughput (tokens/sec)")
@@ -281,7 +282,7 @@ def cmd_report(args):
 
         # CDF chart: per-token latency
         fig, ax = plt.subplots(figsize=(10, 6))
-        colors = ["#e74c3c", "#3498db", "#2ecc71"]
+        colors = ["#e74c3c", "#3498db", "#2ecc71", "#9b59b6", "#f39c12"]
         for i, fw in enumerate(frameworks):
             all_latencies = []
             for pid in prompt_ids:

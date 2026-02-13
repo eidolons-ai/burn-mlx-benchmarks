@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 default = []
 wgpu = ["qwen3-burn/wgpu", "burn/wgpu"]
+metal = ["qwen3-burn/metal", "burn/metal"]
 mlx = ["qwen3-burn/mlx", "dep:burn-mlx"]
 
 [dependencies]
