@@ -357,8 +357,9 @@ fn main() {
     #[cfg(feature = "mlx")]
     {
         use burn_mlx::{Mlx, MlxDevice};
+        type B = Mlx<half::f16>;
         let device = MlxDevice::Gpu;
-        run_bench::<Mlx>(args, device, "burn-mlx", "float32");
+        run_bench::<B>(args, device, "burn-mlx", "float16");
     }
 
     #[cfg(not(any(feature = "wgpu", feature = "metal", feature = "mlx")))]
