@@ -42,7 +42,7 @@ struct RunResult: Codable {
     let iteration: Int
     let token_ids: [Int]
     let per_token_latencies_ms: [Double]
-    let prefill_time_secs: Double
+    let ttft_secs: Double
     let decode_time_secs: Double
     let total_time_secs: Double
     let tokens_generated: Int
@@ -287,7 +287,7 @@ func runBenchmark() async throws {
                 iteration: iteration,
                 token_ids: result.tokenIds,
                 per_token_latencies_ms: result.perTokenLatenciesMs,
-                prefill_time_secs: result.prefillTimeSecs,
+                ttft_secs: result.prefillTimeSecs,
                 decode_time_secs: result.decodeTimeSecs,
                 total_time_secs: result.totalTimeSecs,
                 tokens_generated: result.tokensGenerated,
