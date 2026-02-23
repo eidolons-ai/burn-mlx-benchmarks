@@ -73,7 +73,7 @@ def generate_tokens(
         return {
             "token_ids": token_ids,
             "per_token_latencies_ms": per_token_latencies_ms,
-            "prefill_time_secs": prefill_time,
+            "ttft_secs": prefill_time,
             "decode_time_secs": 0.0,
             "total_time_secs": prefill_time,
             "tokens_generated": 1,
@@ -105,7 +105,7 @@ def generate_tokens(
     return {
         "token_ids": token_ids,
         "per_token_latencies_ms": per_token_latencies_ms,
-        "prefill_time_secs": prefill_time,
+        "ttft_secs": prefill_time,
         "decode_time_secs": decode_time,
         "total_time_secs": total_time,
         "tokens_generated": len(token_ids),
@@ -194,8 +194,8 @@ def main() -> None:
                 else 0.0
             )
             prefill_tps = (
-                result["prompt_tokens"] / result["prefill_time_secs"]
-                if result["prefill_time_secs"] > 0
+                result["prompt_tokens"] / result["ttft_secs"]
+                if result["ttft_secs"] > 0
                 else 0.0
             )
 
@@ -204,7 +204,7 @@ def main() -> None:
                 "iteration": iteration,
                 "token_ids": result["token_ids"],
                 "per_token_latencies_ms": result["per_token_latencies_ms"],
-                "prefill_time_secs": result["prefill_time_secs"],
+                "ttft_secs": result["ttft_secs"],
                 "decode_time_secs": result["decode_time_secs"],
                 "total_time_secs": result["total_time_secs"],
                 "tokens_generated": result["tokens_generated"],

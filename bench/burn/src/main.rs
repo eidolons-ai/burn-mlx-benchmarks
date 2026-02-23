@@ -65,7 +65,7 @@ struct RunResult {
     iteration: usize,
     token_ids: Vec<u32>,
     per_token_latencies_ms: Vec<f64>,
-    prefill_time_secs: f64,
+    ttft_secs: f64,
     decode_time_secs: f64,
     total_time_secs: f64,
     tokens_generated: usize,
@@ -127,13 +127,15 @@ fn run_generation<B: Backend>(
 ) -> (Vec<u32>, Vec<f64>, f64, f64, f64, usize, usize) {
     let mut token_ids: Vec<u32> = Vec::new();
     let mut token_timestamps: Vec<Instant> = Vec::new();
-    let mut prefill_time_secs: f64 = 0.0;
-    let mut total_time_secs: f64 = 0.0;
     let mut tokens_generated: usize = 0;
 
     let prompt_tokens = tokenizer.encode(prompt_text).len();
 
     let mut sampler = Sampler::Argmax;
+
+    // Measure TTFT and total time externally so we don't depend on
+    // the library's internal timing (which requires a working B::sync()).
+    let start = Instant::now();
 
     let _output = model.generate_streaming(
         tokenizer,
@@ -156,19 +158,33 @@ fn run_generation<B: Backend>(
                 }
                 GenerationEvent::Done {
                     tokens_generated: tg,
-                    total_time_secs: tt,
-                    prefill_time_secs: pt,
                     ..
                 } => {
                     tokens_generated = tg;
-                    total_time_secs = tt;
-                    prefill_time_secs = pt;
                 }
                 GenerationEvent::PrefillProgress { .. } => {}
             }
             ControlFlow::Continue(())
         },
     );
+
+    let total_time_secs = start.elapsed().as_secs_f64();
+
+    // TTFT: wall-clock time from start to the first token callback.
+    // The first token callback fires only after prefill logits have been
+    // read back to CPU for sampling, so this is an implicit GPU sync.
+    let ttft_secs = if !token_timestamps.is_empty() {
+        token_timestamps[0].duration_since(start).as_secs_f64()
+    } else {
+        total_time_secs
+    };
+
+    // Decode time: from first token to last token
+    let decode_time_secs = if token_timestamps.len() >= 2 {
+        token_timestamps.last().unwrap().duration_since(token_timestamps[0]).as_secs_f64()
+    } else {
+        0.0
+    };
 
     // Compute per-token latencies from timestamp deltas
     let mut per_token_latencies_ms = Vec::new();
@@ -177,12 +193,10 @@ fn run_generation<B: Backend>(
         per_token_latencies_ms.push(delta.as_secs_f64() * 1000.0);
     }
 
-    let decode_time_secs = total_time_secs - prefill_time_secs;
-
     (
         token_ids,
         per_token_latencies_ms,
-        prefill_time_secs,
+        ttft_secs,
         decode_time_secs,
         total_time_secs,
         tokens_generated,
@@ -261,7 +275,7 @@ fn run_bench<B: Backend>(args: Args, device: burn::prelude::Device<B>, framework
                 total_runs
             );
 
-            let (token_ids, per_token_latencies_ms, prefill_time, decode_time, total_time, toks_gen, prompt_toks) =
+            let (token_ids, per_token_latencies_ms, ttft, decode_time, total_time, toks_gen, prompt_toks) =
                 run_generation(&mut model, &tokenizer, &prompt_text, config.max_new_tokens);
 
             let decode_tokens = if toks_gen > 0 { toks_gen - 1 } else { 0 };
@@ -270,15 +284,15 @@ fn run_bench<B: Backend>(args: Args, device: burn::prelude::Device<B>, framework
             } else {
                 0.0
             };
-            let prefill_tps = if prefill_time > 0.0 {
-                prompt_toks as f64 / prefill_time
+            let prefill_tps = if ttft > 0.0 {
+                prompt_toks as f64 / ttft
             } else {
                 0.0
             };
 
             eprintln!(
-                " {} tokens, decode {:.1} tok/s, prefill {:.1} tok/s",
-                toks_gen, decode_tps, prefill_tps
+                " {} tokens, decode {:.1} tok/s, ttft {:.3}s",
+                toks_gen, decode_tps, ttft
             );
 
             runs.push(RunResult {
@@ -286,7 +300,7 @@ fn run_bench<B: Backend>(args: Args, device: burn::prelude::Device<B>, framework
                 iteration,
                 token_ids,
                 per_token_latencies_ms,
-                prefill_time_secs: prefill_time,
+                ttft_secs: ttft,
                 decode_time_secs: decode_time,
                 total_time_secs: total_time,
                 tokens_generated: toks_gen,
@@ -343,8 +357,9 @@ fn main() {
     #[cfg(feature = "mlx")]
     {
         use burn_mlx::{Mlx, MlxDevice};
+        type B = Mlx<half::f16>;
         let device = MlxDevice::Gpu;
-        run_bench::<Mlx>(args, device, "burn-mlx", "float32");
+        run_bench::<B>(args, device, "burn-mlx", "float16");
     }
 
     #[cfg(not(any(feature = "wgpu", feature = "metal", feature = "mlx")))]

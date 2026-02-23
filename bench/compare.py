@@ -122,13 +122,15 @@ def cmd_report(args):
         hw_info = load_results(args.hw_info)
 
     # Aggregate stats per framework per prompt
-    stats = {}  # framework -> prompt_id -> {decode_tps: [...], prefill_tps: [...], ...}
+    stats = {}  # framework -> prompt_id -> {decode_tps: [...], ttft_secs: [...], ...}
     for fw, data in all_results.items():
         stats[fw] = defaultdict(lambda: defaultdict(list))
         for run in data["runs"]:
             pid = run["prompt_id"]
             stats[fw][pid]["decode_tps"].append(run["decode_tps"])
-            stats[fw][pid]["prefill_tps"].append(run["prefill_tps"])
+            # Support both new ttft_secs and legacy prefill_time_secs
+            ttft = run.get("ttft_secs", run.get("prefill_time_secs", 0))
+            stats[fw][pid]["ttft_secs"].append(ttft)
             stats[fw][pid]["total_time_secs"].append(run["total_time_secs"])
             stats[fw][pid]["tokens_generated"].append(run["tokens_generated"])
             stats[fw][pid]["per_token_latencies_ms"].extend(
@@ -205,19 +207,19 @@ def cmd_report(args):
             md_lines.append(f"- **{fastest}** is **{ratio:.1f}x** faster than **{fw}**")
         md_lines.append("")
 
-    # Prefill throughput
-    md_lines.append("## Prefill Throughput (tokens/sec)")
+    # Time to first token
+    md_lines.append("## Time to First Token (seconds)")
     md_lines.append("")
     md_lines.append("| Framework | Prompt |   Mean | Stddev |")
     md_lines.append("|-----------|--------|-------:|-------:|")
     for fw in frameworks:
         for pid in prompt_ids:
-            vals = stats[fw][pid]["prefill_tps"]
+            vals = stats[fw][pid]["ttft_secs"]
             if not vals:
                 continue
             arr = np.array(vals)
             md_lines.append(
-                f"| {fw:9s} | {pid:6s} | {arr.mean():6.1f} | {arr.std():6.2f} |"
+                f"| {fw:9s} | {pid:6s} | {arr.mean():6.3f} | {arr.std():6.4f} |"
             )
     md_lines.append("")
 
