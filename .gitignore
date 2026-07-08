@@ -12,6 +12,10 @@ __pycache__/
 # Rust
 bench/burn/target/
 
+# ONNX artifacts (multi-GB: exported graph + external f32 weights + reference data)
+bench/burn/qwen-onnx/artifacts/
+bench/burn/qwen-onnx/model/
+
 # Swift
 bench/swift/.build/
 bench/swift/Package.resolved

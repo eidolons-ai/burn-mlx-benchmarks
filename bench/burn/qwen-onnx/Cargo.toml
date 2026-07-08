@@ -1,0 +1,37 @@
+[package]
+name = "qwen-onnx"
+version = "0.1.0"
+edition = "2021"
+
+# ONNX-imported Qwen3-0.6B benchmark. The cacheless opset-16 ONNX graph (produced
+# by ../../get_qwen_onnx.py) is turned into Rust + a burnpack weight file at build
+# time by burn-onnx. Because the graph has NO KV cache, this binary measures TTFT /
+# single-forward prefill and token-id parity vs the hand-coded model — not decode
+# throughput. See the README methodology note.
+
+[[bin]]
+name = "qwen-onnx"
+path = "src/main.rs"
+
+[features]
+default = []
+wgpu = ["burn/wgpu"]
+metal = ["burn/metal"]
+mlx = ["dep:burn-mlx"]
+flex = ["burn/flex", "burn/apple-amx"]
+
+[build-dependencies]
+burn-onnx = "0.21"
+
+[dependencies]
+burn = { version = "0.21.0", default-features = false, features = ["std"] }
+burn-store = { version = "0.21", default-features = false, features = ["std", "burnpack", "pytorch"] }
+burn-mlx = { git = "https://github.com/eidolons-ai/burn-mlx.git", branch = "burn-0-20", optional = true }
+# Reused only for tokenization + chat template (keeps prompts identical to the
+# hand-coded case). Backend features are not enabled here.
+qwen3-burn = { git = "https://github.com/eidolons-ai/qwen3-burn.git", branch = "burn-mlx", default-features = false }
+bench-common = { path = "../bench-common" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+clap = { version = "4", features = ["derive"] }
+half = { version = "2.4", features = ["serde"] }

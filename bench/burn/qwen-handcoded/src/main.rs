@@ -1,16 +1,14 @@
+use bench_common::{get_peak_rss_mb, write_results, BenchResults, PromptsFile, RunResult};
 use burn::prelude::Backend;
 use clap::Parser;
 use qwen3_burn::model::{GenerationEvent, GenerationParams, QuantizationMode, Qwen3};
 use qwen3_burn::sampling::Sampler;
 use qwen3_burn::tokenizer::Qwen3Tokenizer;
-use serde::{Deserialize, Serialize};
-use std::fs;
-use std::io::Write;
 use std::ops::ControlFlow;
 use std::time::Instant;
 
 #[derive(Parser)]
-#[command(name = "burn-bench", about = "Burn benchmark for Qwen3-0.6B")]
+#[command(name = "qwen-handcoded", about = "Burn benchmark for the hand-coded Qwen3-0.6B")]
 struct Args {
     /// Path to model directory (config.json, model.safetensors, tokenizer.json)
     #[arg(long)]
@@ -25,100 +23,7 @@ struct Args {
     output: Option<String>,
 }
 
-#[derive(Deserialize)]
-struct PromptsFile {
-    config: BenchConfig,
-    warmup: PromptEntry,
-    prompts: Vec<PromptEntry>,
-}
-
-#[derive(Deserialize)]
-struct BenchConfig {
-    max_new_tokens: usize,
-    timed_iterations: usize,
-    warmup_iterations: usize,
-    sleep_between_runs_secs: u64,
-    #[allow(dead_code)]
-    temperature: f64,
-}
-
-#[derive(Deserialize)]
-struct PromptEntry {
-    id: String,
-    system_prompt: String,
-    user_message: String,
-    #[allow(dead_code)]
-    label: Option<String>,
-}
-
-#[derive(Serialize)]
-struct BenchResults {
-    framework: String,
-    precision: String,
-    runs: Vec<RunResult>,
-    peak_rss_mb: f64,
-}
-
-#[derive(Serialize)]
-struct RunResult {
-    prompt_id: String,
-    iteration: usize,
-    token_ids: Vec<u32>,
-    per_token_latencies_ms: Vec<f64>,
-    ttft_secs: f64,
-    decode_time_secs: f64,
-    total_time_secs: f64,
-    tokens_generated: usize,
-    prompt_tokens: usize,
-    decode_tps: f64,
-    prefill_tps: f64,
-}
-
-/// Get peak RSS in MB via mach_task_info (macOS).
-fn get_peak_rss_mb() -> f64 {
-    use std::mem;
-
-    #[repr(C)]
-    #[allow(non_camel_case_types)]
-    struct mach_task_basic_info {
-        virtual_size: u64,
-        resident_size: u64,
-        resident_size_max: u64,
-        user_time: [u32; 2],
-        system_time: [u32; 2],
-        policy: i32,
-        suspend_count: i32,
-    }
-
-    extern "C" {
-        fn mach_task_self() -> u32;
-        fn task_info(
-            target_task: u32,
-            flavor: u32,
-            task_info_out: *mut mach_task_basic_info,
-            task_info_count: *mut u32,
-        ) -> i32;
-    }
-
-    const MACH_TASK_BASIC_INFO: u32 = 20;
-
-    unsafe {
-        let mut info: mach_task_basic_info = mem::zeroed();
-        let mut count = (mem::size_of::<mach_task_basic_info>() / mem::size_of::<u32>()) as u32;
-        let kr = task_info(
-            mach_task_self(),
-            MACH_TASK_BASIC_INFO,
-            &mut info as *mut _,
-            &mut count,
-        );
-        if kr == 0 {
-            info.resident_size_max as f64 / (1024.0 * 1024.0)
-        } else {
-            0.0
-        }
-    }
-}
-
+#[allow(clippy::type_complexity)]
 fn run_generation<B: Backend>(
     model: &mut Qwen3<B>,
     tokenizer: &Qwen3Tokenizer,
@@ -181,7 +86,11 @@ fn run_generation<B: Backend>(
 
     // Decode time: from first token to last token
     let decode_time_secs = if token_timestamps.len() >= 2 {
-        token_timestamps.last().unwrap().duration_since(token_timestamps[0]).as_secs_f64()
+        token_timestamps
+            .last()
+            .unwrap()
+            .duration_since(token_timestamps[0])
+            .as_secs_f64()
     } else {
         0.0
     };
@@ -204,28 +113,24 @@ fn run_generation<B: Backend>(
     )
 }
 
-fn run_bench<B: Backend>(args: Args, device: burn::prelude::Device<B>, framework: &str, precision: &str) {
-    // Load prompts
-    let prompts_json = fs::read_to_string(&args.prompts_file).expect("Failed to read prompts file");
-    let prompts_data: PromptsFile =
-        serde_json::from_str(&prompts_json).expect("Failed to parse prompts JSON");
-
+fn run_bench<B: Backend>(
+    args: Args,
+    device: burn::prelude::Device<B>,
+    framework: &str,
+    precision: &str,
+) {
+    let prompts_data = PromptsFile::load(&args.prompts_file);
     let config = &prompts_data.config;
 
     // Load model
     eprintln!("Loading model from {} ({})...", args.model_path, framework);
 
-    let mut model = Qwen3::<B>::from_pretrained(
-        &args.model_path,
-        4096,
-        QuantizationMode::None,
-        &device,
-    )
-    .expect("Failed to load model");
+    let mut model =
+        Qwen3::<B>::from_pretrained(&args.model_path, 4096, QuantizationMode::None, &device)
+            .expect("Failed to load model");
 
     let tokenizer_path = format!("{}/tokenizer.json", args.model_path);
-    let tokenizer =
-        Qwen3Tokenizer::new(&tokenizer_path).expect("Failed to load tokenizer");
+    let tokenizer = Qwen3Tokenizer::new(&tokenizer_path).expect("Failed to load tokenizer");
 
     eprintln!("Model loaded.");
 
@@ -234,10 +139,7 @@ fn run_bench<B: Backend>(args: Args, device: burn::prelude::Device<B>, framework
         &prompts_data.warmup.system_prompt,
         &prompts_data.warmup.user_message,
     );
-    eprintln!(
-        "Running {} warmup iterations...",
-        config.warmup_iterations
-    );
+    eprintln!("Running {} warmup iterations...", config.warmup_iterations);
     for i in 0..config.warmup_iterations {
         let _ = run_generation(&mut model, &tokenizer, &warmup_text, 16);
         eprintln!("  warmup {}/{} done", i + 1, config.warmup_iterations);
@@ -249,10 +151,8 @@ fn run_bench<B: Backend>(args: Args, device: burn::prelude::Device<B>, framework
     let mut run_num = 0;
 
     for prompt_info in &prompts_data.prompts {
-        let prompt_text = tokenizer.apply_chat_template(
-            &prompt_info.system_prompt,
-            &prompt_info.user_message,
-        );
+        let prompt_text =
+            tokenizer.apply_chat_template(&prompt_info.system_prompt, &prompt_info.user_message);
         let prompt_token_count = tokenizer.encode(&prompt_text).len();
         eprintln!(
             "\nPrompt '{}': {} input tokens",
@@ -316,21 +216,12 @@ fn run_bench<B: Backend>(args: Args, device: burn::prelude::Device<B>, framework
         precision: precision.to_string(),
         runs,
         peak_rss_mb: get_peak_rss_mb(),
+        decode_measured: true,
+        notes: None,
     };
 
-    let output_json = serde_json::to_string_pretty(&results).expect("Failed to serialize results");
-
-    if let Some(output_path) = &args.output {
-        fs::write(output_path, &output_json).expect("Failed to write output file");
-        eprintln!("\nResults written to {}", output_path);
-    } else {
-        let stdout = std::io::stdout();
-        let mut handle = stdout.lock();
-        handle
-            .write_all(output_json.as_bytes())
-            .expect("Failed to write to stdout");
-        handle.write_all(b"\n").ok();
-    }
+    let output = args.output.clone();
+    write_results(&results, output.as_deref());
 }
 
 fn main() {
@@ -348,8 +239,8 @@ fn main() {
     #[cfg(feature = "metal")]
     {
         use burn::backend::wgpu::WgpuDevice;
-        use burn::backend::Wgpu;
-        type B = Wgpu<half::f16, i32>;
+        use burn::backend::Metal;
+        type B = Metal<half::f16, i32>;
         let device = WgpuDevice::DefaultDevice;
         run_bench::<B>(args, device, "burn-metal", "float16");
     }
@@ -362,10 +253,21 @@ fn main() {
         run_bench::<B>(args, device, "burn-mlx", "float16");
     }
 
-    #[cfg(not(any(feature = "wgpu", feature = "metal", feature = "mlx")))]
+    #[cfg(feature = "flex")]
+    {
+        use burn::backend::flex::FlexDevice;
+        use burn::backend::Flex;
+        // Flex only implements Backend for the default `Flex<f32, i32>`, so the
+        // pure-Rust CPU baseline runs in f32 (with Apple AMX GEMM acceleration).
+        type B = Flex;
+        let device = FlexDevice;
+        run_bench::<B>(args, device, "burn-flex", "float32");
+    }
+
+    #[cfg(not(any(feature = "wgpu", feature = "metal", feature = "mlx", feature = "flex")))]
     {
         let _ = args;
-        eprintln!("No backend enabled. Build with --features wgpu, --features metal, or --features mlx");
+        eprintln!("No backend enabled. Build with --features wgpu|metal|mlx|flex");
         std::process::exit(1);
     }
 }

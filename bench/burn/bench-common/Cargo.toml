@@ -1,0 +1,12 @@
+[package]
+name = "bench-common"
+version = "0.1.0"
+edition = "2021"
+
+# Shared benchmark schema + helpers for the Burn-based Qwen3 benchmarks.
+# Backend-agnostic: deliberately has no `burn` dependency so both the
+# hand-coded and ONNX binaries emit byte-identical JSON for `compare.py`.
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

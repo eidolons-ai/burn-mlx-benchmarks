@@ -1,19 +1,15 @@
-[package]
-name = "burn-bench"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+resolver = "2"
+members = ["bench-common", "qwen-handcoded", "qwen-onnx"]
 
-[features]
-default = []
-wgpu = ["qwen3-burn/wgpu", "burn/wgpu"]
-metal = ["qwen3-burn/metal", "burn/metal"]
-mlx = ["qwen3-burn/mlx", "dep:burn-mlx"]
+# --- Local development overrides ---------------------------------------------
+# The burn-0.21 ports of qwen3-burn and burn-mlx live on their `burn-0-21`
+# branches. Until those branches are published, the member crates reference the
+# existing (resolvable) git branches and these patches redirect them to the
+# local checkouts that carry the 0.21 code. Once the branches are pushed, point
+# the member `git`/`branch` refs at `burn-0-21` and delete this section.
+[patch."https://github.com/eidolons-ai/qwen3-burn.git"]
+qwen3-burn = { path = "/Users/mike/Code/qwen3-burn" }
 
-[dependencies]
-qwen3-burn = { git = "https://github.com/eidolons-ai/qwen3-burn.git", branch = "burn-mlx", default-features = false }
-burn = { version = "0.20.0", default-features = false, features = ["std"] }
-burn-mlx = { git = "https://github.com/eidolons-ai/burn-mlx.git", branch = "burn-0-20", optional = true }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-clap = { version = "4", features = ["derive"] }
-half = { version = "2.4", features = ["serde"] }
+[patch."https://github.com/eidolons-ai/burn-mlx.git"]
+burn-mlx = { path = "/Users/mike/Code/burn-mlx" }

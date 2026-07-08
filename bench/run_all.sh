@@ -4,12 +4,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BENCH_DIR="$SCRIPT_DIR"
+REL="$BENCH_DIR/burn/target/release"
 
-# Default model path
 MODEL_PATH="${MODEL_PATH:-$REPO_ROOT/models/Qwen3-0.6B}"
 PROMPTS_FILE="$BENCH_DIR/prompts.json"
 
-# Results directory with timestamp
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 RESULTS_DIR="$REPO_ROOT/results/$TIMESTAMP"
 mkdir -p "$RESULTS_DIR"
@@ -19,13 +18,11 @@ echo "Model:   $MODEL_PATH"
 echo "Results: $RESULTS_DIR"
 echo ""
 
-# Use venv Python directly (more reliable than source activate under set -euo pipefail)
 VENV_DIR="$BENCH_DIR/.venv"
 if [ -x "$VENV_DIR/bin/python3" ]; then
     PYTHON="$VENV_DIR/bin/python3"
 else
     echo "WARNING: No venv found at $VENV_DIR. Run setup.sh first."
-    echo "Continuing with system Python..."
     PYTHON="python3"
 fi
 
@@ -44,69 +41,41 @@ echo ">>> Running MLX Python benchmark..."
 echo "    Saved to mlx_results.json"
 echo ""
 
-# --- Burn/WGPU benchmark ---
-BURN_WGPU_BIN="$BENCH_DIR/burn/target/release/burn-bench-wgpu"
-if [ -f "$BURN_WGPU_BIN" ]; then
-    echo ">>> Running Burn/WGPU benchmark..."
-    "$BURN_WGPU_BIN" \
-        --model-path "$MODEL_PATH" \
-        --prompts-file "$PROMPTS_FILE" \
-        --output "$RESULTS_DIR/burn_wgpu_results.json"
-    echo "    Saved to burn_wgpu_results.json"
-    echo ""
-else
-    echo ">>> SKIPPING Burn/WGPU benchmark (binary not found). Run setup.sh first."
-    echo ""
-fi
+# --- Burn benchmarks (hand-coded, one binary per backend) ---
+run_bin() {
+    local bin="$1" out="$2" label="$3"
+    if [ -f "$bin" ]; then
+        echo ">>> Running $label benchmark..."
+        "$bin" \
+            --model-path "$MODEL_PATH" \
+            --prompts-file "$PROMPTS_FILE" \
+            --output "$RESULTS_DIR/$out"
+        echo "    Saved to $out"
+        echo ""
+    else
+        echo ">>> SKIPPING $label (binary not found: $bin). Run setup.sh first."
+        echo ""
+    fi
+}
 
-# --- Burn/Metal benchmark ---
-BURN_METAL_BIN="$BENCH_DIR/burn/target/release/burn-bench-metal"
-if [ -f "$BURN_METAL_BIN" ]; then
-    echo ">>> Running Burn/Metal benchmark..."
-    "$BURN_METAL_BIN" \
-        --model-path "$MODEL_PATH" \
-        --prompts-file "$PROMPTS_FILE" \
-        --output "$RESULTS_DIR/burn_metal_results.json"
-    echo "    Saved to burn_metal_results.json"
-    echo ""
-else
-    echo ">>> SKIPPING Burn/Metal benchmark (binary not found). Run setup.sh first."
-    echo ""
-fi
+run_bin "$REL/qwen-handcoded-wgpu"  burn_wgpu_results.json  "Burn/WGPU (hand-coded)"
+run_bin "$REL/qwen-handcoded-metal" burn_metal_results.json "Burn/Metal (hand-coded)"
+run_bin "$REL/qwen-handcoded-mlx"   burn_mlx_results.json   "Burn/MLX (hand-coded)"
+run_bin "$REL/qwen-handcoded-flex"  burn_flex_results.json  "Burn/Flex CPU (hand-coded)"
 
-# --- Burn/MLX benchmark ---
-BURN_MLX_BIN="$BENCH_DIR/burn/target/release/burn-bench-mlx"
-if [ -f "$BURN_MLX_BIN" ]; then
-    echo ">>> Running Burn/MLX benchmark..."
-    "$BURN_MLX_BIN" \
-        --model-path "$MODEL_PATH" \
-        --prompts-file "$PROMPTS_FILE" \
-        --output "$RESULTS_DIR/burn_mlx_results.json"
-    echo "    Saved to burn_mlx_results.json"
-    echo ""
-else
-    echo ">>> SKIPPING Burn/MLX benchmark (binary not found). Run setup.sh first."
-    echo ""
-fi
+# ONNX-imported model (Flex CPU backend). Cacheless graph: TTFT/prefill +
+# token parity only (see report methodology note).
+run_bin "$REL/qwen-onnx-flex"       burn_onnx_results.json  "Burn/ONNX (Flex CPU)"
 
 # --- MLX Swift benchmark ---
 SWIFT_BIN="$BENCH_DIR/swift/.build/xcode/Build/Products/Release/mlx-swift-bench"
-if [ -f "$SWIFT_BIN" ]; then
-    echo ">>> Running MLX Swift benchmark..."
-    "$SWIFT_BIN" \
-        --model-path "$MODEL_PATH" \
-        --prompts-file "$PROMPTS_FILE" \
-        --output "$RESULTS_DIR/swift_results.json"
-    echo "    Saved to swift_results.json"
-    echo ""
-else
-    echo ">>> SKIPPING MLX Swift benchmark (binary not found). Run setup.sh first."
-    echo ""
-fi
+run_bin "$SWIFT_BIN" swift_results.json "MLX Swift"
 
 # --- Collect available result files ---
 RESULT_FILES=()
-for f in mlx_results.json burn_wgpu_results.json burn_metal_results.json burn_mlx_results.json swift_results.json; do
+for f in mlx_results.json burn_wgpu_results.json burn_metal_results.json \
+         burn_mlx_results.json burn_flex_results.json burn_onnx_results.json \
+         swift_results.json; do
     if [ -f "$RESULTS_DIR/$f" ]; then
         RESULT_FILES+=("$RESULTS_DIR/$f")
     fi

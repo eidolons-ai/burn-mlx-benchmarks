@@ -128,6 +128,7 @@ def cmd_report(args):
         for run in data["runs"]:
             pid = run["prompt_id"]
             stats[fw][pid]["decode_tps"].append(run["decode_tps"])
+            stats[fw][pid]["prefill_tps"].append(run.get("prefill_tps", 0))
             # Support both new ttft_secs and legacy prefill_time_secs
             ttft = run.get("ttft_secs", run.get("prefill_time_secs", 0))
             stats[fw][pid]["ttft_secs"].append(ttft)
@@ -138,6 +139,14 @@ def cmd_report(args):
             )
 
     frameworks = sorted(all_results.keys())
+    # Frameworks that produce a meaningful autoregressive decode throughput.
+    # The ONNX-imported graph is cacheless (no KV cache) and sets
+    # decode_measured=false, so it is excluded from the decode tables/charts and
+    # only appears in the prefill/TTFT tables. Other frameworks (and the
+    # Python/Swift benches, which omit the field) default to true.
+    decode_frameworks = [
+        fw for fw in frameworks if all_results[fw].get("decode_measured", True)
+    ]
     prompt_ids = set()
     for fw in frameworks:
         prompt_ids.update(stats[fw].keys())
@@ -164,7 +173,7 @@ def cmd_report(args):
     md_lines.append(header)
     md_lines.append(sep)
 
-    for fw in frameworks:
+    for fw in decode_frameworks:
         for pid in prompt_ids:
             vals = stats[fw][pid]["decode_tps"]
             if not vals:
@@ -183,7 +192,7 @@ def cmd_report(args):
     md_lines.append("|-----------|----------:|-------:|--------:|")
 
     overall_decode = {}
-    for fw in frameworks:
+    for fw in decode_frameworks:
         all_vals = []
         for pid in prompt_ids:
             all_vals.extend(stats[fw][pid]["decode_tps"])
@@ -223,6 +232,23 @@ def cmd_report(args):
             )
     md_lines.append("")
 
+    # Prefill throughput (input tokens / TTFT). Includes the ONNX case, whose
+    # single-forward prefill is its primary comparable metric.
+    md_lines.append("## Prefill Throughput (tokens/sec)")
+    md_lines.append("")
+    md_lines.append("| Framework | Prompt |   Mean | Stddev |")
+    md_lines.append("|-----------|--------|-------:|-------:|")
+    for fw in frameworks:
+        for pid in prompt_ids:
+            vals = stats[fw][pid]["prefill_tps"]
+            if not vals:
+                continue
+            arr = np.array(vals)
+            md_lines.append(
+                f"| {fw:9s} | {pid:6s} | {arr.mean():6.1f} | {arr.std():6.2f} |"
+            )
+    md_lines.append("")
+
     # Peak RSS
     md_lines.append("## Memory Usage")
     md_lines.append("")
@@ -240,6 +266,19 @@ def cmd_report(args):
     md_lines.append("Run `compare.py verify` for detailed token comparison.")
     md_lines.append("")
 
+    # Methodology notes surfaced from result files (e.g. the ONNX no-KV-cache caveat).
+    notes = [
+        (fw, all_results[fw]["notes"])
+        for fw in frameworks
+        if all_results[fw].get("notes")
+    ]
+    if notes:
+        md_lines.append("## Methodology Notes")
+        md_lines.append("")
+        for fw, note in notes:
+            md_lines.append(f"- **{fw}**: {note}")
+        md_lines.append("")
+
     md_content = "\n".join(md_lines)
     md_path = output_dir / "report.md"
     md_path.write_text(md_content)
@@ -254,12 +293,12 @@ def cmd_report(args):
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
-        # Bar chart: decode tok/s by framework
+        # Bar chart: decode tok/s by framework (decode-capable frameworks only)
         fig, ax = plt.subplots(figsize=(10, 6))
-        x_pos = np.arange(len(frameworks))
+        x_pos = np.arange(len(decode_frameworks))
         means = []
         stds = []
-        for fw in frameworks:
+        for fw in decode_frameworks:
             all_vals = []
             for pid in prompt_ids:
                 all_vals.extend(stats[fw][pid]["decode_tps"])
@@ -267,10 +306,10 @@ def cmd_report(args):
             means.append(arr.mean())
             stds.append(arr.std())
 
-        palette = ["#e74c3c", "#3498db", "#2ecc71", "#9b59b6", "#f39c12"]
-        bars = ax.bar(x_pos, means, yerr=stds, capsize=5, color=palette[:len(frameworks)])
+        palette = ["#e74c3c", "#3498db", "#2ecc71", "#9b59b6", "#f39c12", "#1abc9c"]
+        bars = ax.bar(x_pos, means, yerr=stds, capsize=5, color=palette[:len(decode_frameworks)])
         ax.set_xticks(x_pos)
-        ax.set_xticklabels(frameworks)
+        ax.set_xticklabels(decode_frameworks)
         ax.set_ylabel("Decode Throughput (tokens/sec)")
         ax.set_title("Qwen3-0.6B Decode Throughput by Framework")
         for bar, mean in zip(bars, means):
@@ -284,8 +323,8 @@ def cmd_report(args):
 
         # CDF chart: per-token latency
         fig, ax = plt.subplots(figsize=(10, 6))
-        colors = ["#e74c3c", "#3498db", "#2ecc71", "#9b59b6", "#f39c12"]
-        for i, fw in enumerate(frameworks):
+        colors = ["#e74c3c", "#3498db", "#2ecc71", "#9b59b6", "#f39c12", "#1abc9c"]
+        for i, fw in enumerate(decode_frameworks):
             all_latencies = []
             for pid in prompt_ids:
                 all_latencies.extend(stats[fw][pid]["per_token_latencies_ms"])

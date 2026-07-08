@@ -4,8 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BENCH_DIR="$SCRIPT_DIR"
+WS="$BENCH_DIR/burn"           # cargo workspace
+REL="$WS/target/release"
 
-# Default model path (sibling qwen3-burn repo)
+# Default model path
 MODEL_PATH="${MODEL_PATH:-$REPO_ROOT/models/Qwen3-0.6B}"
 
 echo "=== Qwen3-0.6B Benchmark Setup ==="
@@ -22,7 +24,6 @@ for f in config.json tokenizer.json; do
         exit 1
     fi
 done
-# Check for any safetensors file
 if ! ls "$MODEL_PATH"/*.safetensors 1>/dev/null 2>&1; then
     echo "ERROR: No .safetensors files found in $MODEL_PATH"
     exit 1
@@ -30,7 +31,7 @@ fi
 echo "  Model weights found."
 echo ""
 
-# --- Python venv ---
+# --- Python venv (MLX Python bench) ---
 echo "Setting up Python virtual environment..."
 VENV_DIR="$BENCH_DIR/.venv"
 if ! command -v uv &>/dev/null; then
@@ -38,7 +39,6 @@ if ! command -v uv &>/dev/null; then
     exit 1
 fi
 if [ ! -d "$VENV_DIR" ]; then
-    # Prefer python 3.12 for mlx compatibility
     echo "  Creating venv with uv..."
     uv venv --python 3.12 "$VENV_DIR" 2>/dev/null \
         || uv venv --python 3.13 "$VENV_DIR" 2>/dev/null \
@@ -51,43 +51,57 @@ echo "  Python venv ready: $(python --version), mlx $(python -c 'import mlx.core
 deactivate
 echo ""
 
-# --- Build Burn benchmarks ---
-echo "Building Burn/WGPU benchmark (release)..."
-(cd "$BENCH_DIR/burn" && cargo build --release --features wgpu 2>&1 | tail -1)
-cp -f "$BENCH_DIR/burn/target/release/burn-bench" "$BENCH_DIR/burn/target/release/burn-bench-wgpu" 2>/dev/null || true
-if [ -f "$BENCH_DIR/burn/target/release/burn-bench-wgpu" ]; then
-    echo "  burn-bench-wgpu: OK"
-else
-    echo "  WARNING: Burn/WGPU build may have failed."
-fi
+# --- Build hand-coded Burn benchmark (one binary per backend feature) ---
+# The workspace builds a single `qwen-handcoded` binary; we build it once per
+# backend feature and copy it to a per-backend name.
+build_handcoded() {
+    local feat="$1" name="$2"
+    echo "Building qwen-handcoded (--features $feat)..."
+    (cd "$WS" && cargo build --release -p qwen-handcoded --features "$feat" 2>&1 | tail -1)
+    if [ -f "$REL/qwen-handcoded" ]; then
+        cp -f "$REL/qwen-handcoded" "$REL/qwen-handcoded-$name"
+        echo "  qwen-handcoded-$name: OK"
+    else
+        echo "  WARNING: qwen-handcoded ($feat) build may have failed."
+    fi
+}
 
-echo "Building Burn/Metal benchmark (release)..."
-(cd "$BENCH_DIR/burn" && cargo build --release --features metal 2>&1 | tail -1)
-cp -f "$BENCH_DIR/burn/target/release/burn-bench" "$BENCH_DIR/burn/target/release/burn-bench-metal" 2>/dev/null || true
-if [ -f "$BENCH_DIR/burn/target/release/burn-bench-metal" ]; then
-    echo "  burn-bench-metal: OK"
-else
-    echo "  WARNING: Burn/Metal build may have failed."
-fi
+build_handcoded wgpu wgpu
+build_handcoded metal metal
+build_handcoded mlx mlx
+build_handcoded flex flex
 
-echo "Building Burn/MLX benchmark (release)..."
-(cd "$BENCH_DIR/burn" && cargo build --release --features mlx 2>&1 | tail -1)
-cp -f "$BENCH_DIR/burn/target/release/burn-bench" "$BENCH_DIR/burn/target/release/burn-bench-mlx" 2>/dev/null || true
-# MLX needs its Metal shader library (mlx.metallib) colocated with the binary
-METALLIB="$(find "$BENCH_DIR/burn/target/release/build" -path '*/mlx-sys-burn-*/out/build/lib/mlx.metallib' -print -quit 2>/dev/null)"
+# MLX needs its Metal shader library colocated with the binary.
+METALLIB="$(find "$WS/target/release/build" -path '*mlx-sys-burn-*/out/build/lib/mlx.metallib' -print -quit 2>/dev/null)"
 if [ -n "$METALLIB" ]; then
-    cp -f "$METALLIB" "$BENCH_DIR/burn/target/release/mlx.metallib"
+    cp -f "$METALLIB" "$REL/mlx.metallib"
+    echo "  mlx.metallib colocated."
 fi
-if [ -f "$BENCH_DIR/burn/target/release/burn-bench-mlx" ]; then
-    echo "  burn-bench-mlx: OK"
+echo ""
+
+# --- ONNX case: export the cacheless graph, then build (Flex CPU backend) ---
+# The ONNX-imported model runs on the Flex backend (see README methodology:
+# cubecl Metal/wgpu cannot load its Native-bool constant, and the MLX backend
+# lacks gather_nd). Flex is a first-class pure-Rust CPU backend in burn 0.21.
+ONNX_ARTIFACT="$WS/qwen-onnx/artifacts/qwen3-0_6b_opset16.onnx"
+if [ ! -f "$ONNX_ARTIFACT" ]; then
+    echo "Exporting Qwen3-0.6B to ONNX (this downloads torch/transformers via uv)..."
+    MODEL_PATH="$MODEL_PATH" "$BENCH_DIR/get_qwen_onnx.py"
 else
-    echo "  WARNING: Burn/MLX build may have failed."
+    echo "ONNX artifact already present: $ONNX_ARTIFACT"
+fi
+
+echo "Building qwen-onnx (--features flex)..."
+(cd "$WS" && cargo build --release -p qwen-onnx --features flex 2>&1 | tail -1)
+if [ -f "$REL/qwen-onnx" ]; then
+    cp -f "$REL/qwen-onnx" "$REL/qwen-onnx-flex"
+    echo "  qwen-onnx-flex: OK"
+else
+    echo "  WARNING: qwen-onnx build may have failed."
 fi
 echo ""
 
 # --- Build Swift benchmark ---
-# Must use xcodebuild (not swift build) because Metal shaders require Xcode's
-# build system to compile the .metallib that MLX needs at runtime.
 echo "Building Swift benchmark (release via xcodebuild)..."
 SWIFT_BUILD_DIR="$BENCH_DIR/swift/.build/xcode"
 (cd "$BENCH_DIR/swift" && xcodebuild -scheme mlx-swift-bench -configuration Release \
