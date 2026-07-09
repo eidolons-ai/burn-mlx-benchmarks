@@ -46,9 +46,7 @@ if [ ! -d "$VENV_DIR" ]; then
 fi
 echo "  Installing Python dependencies..."
 VIRTUAL_ENV="$VENV_DIR" uv pip install --quiet mlx-lm matplotlib numpy
-source "$VENV_DIR/bin/activate"
-echo "  Python venv ready: $(python --version), mlx $(python -c 'import mlx.core; print(mlx.core.__version__)')"
-deactivate
+echo "  Python venv ready: $("$VENV_DIR/bin/python3" --version), mlx $("$VENV_DIR/bin/python3" -c 'import mlx.core; print(mlx.core.__version__)' 2>/dev/null || echo '?')"
 echo ""
 
 # --- Build hand-coded Burn benchmark (one binary per backend feature) ---

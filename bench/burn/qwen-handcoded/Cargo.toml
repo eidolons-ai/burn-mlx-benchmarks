@@ -17,9 +17,9 @@ mlx = ["qwen3-burn/mlx", "dep:burn-mlx"]
 flex = ["burn/flex", "burn/apple-amx"]
 
 [dependencies]
-qwen3-burn = { git = "https://github.com/eidolons-ai/qwen3-burn.git", branch = "burn-mlx", default-features = false }
+qwen3-burn = { git = "https://github.com/eidolons-ai/qwen3-burn.git", branch = "burn-0-21", default-features = false }
 burn = { version = "0.21.0", default-features = false, features = ["std"] }
-burn-mlx = { git = "https://github.com/eidolons-ai/burn-mlx.git", branch = "burn-0-20", optional = true }
+burn-mlx = { git = "https://github.com/eidolons-ai/burn-mlx.git", branch = "burn-0-21", optional = true }
 bench-common = { path = "../bench-common" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

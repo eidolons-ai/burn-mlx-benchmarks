@@ -706,6 +706,7 @@ dependencies = [
 [[package]]
 name = "burn-mlx"
 version = "0.1.2"
+source = "git+https://github.com/eidolons-ai/burn-mlx.git?branch=burn-0-21#d323f0fbfe668d123565311377ace22b914f9db0"
 dependencies = [
  "burn",
  "burn-tensor",
@@ -4551,6 +4552,7 @@ dependencies = [
 [[package]]
 name = "qwen3-burn"
 version = "0.1.0"
+source = "git+https://github.com/eidolons-ai/qwen3-burn.git?branch=burn-0-21#1070c0cef8aeabf6ddb753b895ef9b1359009557"
 dependencies = [
  "burn",
  "burn-mlx",

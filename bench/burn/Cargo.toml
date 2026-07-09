@@ -1,15 +1,3 @@
 [workspace]
 resolver = "2"
 members = ["bench-common", "qwen-handcoded", "qwen-onnx"]
-
-# --- Local development overrides ---------------------------------------------
-# The burn-0.21 ports of qwen3-burn and burn-mlx live on their `burn-0-21`
-# branches. Until those branches are published, the member crates reference the
-# existing (resolvable) git branches and these patches redirect them to the
-# local checkouts that carry the 0.21 code. Once the branches are pushed, point
-# the member `git`/`branch` refs at `burn-0-21` and delete this section.
-[patch."https://github.com/eidolons-ai/qwen3-burn.git"]
-qwen3-burn = { path = "/Users/mike/Code/qwen3-burn" }
-
-[patch."https://github.com/eidolons-ai/burn-mlx.git"]
-burn-mlx = { path = "/Users/mike/Code/burn-mlx" }
