@@ -9,7 +9,7 @@ inference implementations on Apple Silicon, built on **Burn 0.21**.
 | **burn-wgpu** | Rust | WGPU (WGSL) | Cross-platform GPU path |
 | **burn-mlx** | Rust | MLX/Metal (via [burn-mlx](https://github.com/eidolons-ai/burn-mlx)) | Third-party MLX backend |
 | **burn-flex** | Rust | Flex (pure-Rust CPU, `apple-amx`) | New 0.21 CPU backend (replaces ndarray) |
-| **burn-onnx** | Rust | Flex CPU | **ONNX-imported** model (see [ONNX case](#the-onnx-case)) |
+| **burn-onnx** | Rust | MLX/Metal | **ONNX-imported** model (see [ONNX case](#the-onnx-case)) |
 | **mlx-lm** | Python | MLX/Metal | Reference implementation |
 | **mlx-swift** | Swift | MLX/Metal | Reference implementation |
 
@@ -43,12 +43,13 @@ is benchmarked:
   O(n²) re-prefill, so **the ONNX case reports TTFT / single-forward prefill and token-id
   correctness only — never a decode-throughput comparison.** It is excluded from the decode tables
   and charts; `compare.py` reads its `decode_measured: false` flag.
-- **f32, CPU (Flex).** The graph is exported and imported in **f32**. It runs on the **Flex** CPU
-  backend because: the cubecl Metal/WGPU backends cannot *load* the graph (its bool constant is
-  persisted as `Bool(Native)`, which cubecl's `bool_from_data` rejects), and the MLX backend does
-  not implement `gather_nd`. Flex is a first-class 0.21 backend that implements the full op surface
-  the graph needs. This yields a clean same-backend comparison against the `burn-flex` hand-coded
-  case (both f32 CPU).
+- **f32, MLX GPU.** The graph is exported and imported in **f32**. It runs on the **MLX** backend,
+  giving a clean same-backend comparison against the hand-coded `burn-mlx` case (auto-generated vs
+  hand-written on the same GPU backend). Making the graph run on MLX required implementing
+  `gather_nd` in the burn-mlx fork (the one op the graph used that the backend lacked) plus a
+  u32→i32 index-readback fix. `--features flex` also works as a pure-Rust CPU fallback. The cubecl
+  Metal/WGPU backends still cannot *load* the graph — its bool constant is persisted as
+  `Bool(Native)`, which cubecl's `bool_from_data` rejects.
 
 Correctness is checked two ways: a one-shot numeric diff of the imported model's logits against the
 ONNX Runtime reference (tolerance `max<1e-2, mean<1e-3`, as in PR #181), and cross-framework
@@ -105,19 +106,20 @@ results/              # Created by run_all.sh
 
 ## Dependencies / local development
 
-The `burn-0-21` ports of the two upstream repos are consumed as git dependencies:
+The `burn-0-21` ports of the two upstream repos are consumed as git dependencies (both on their
+`burn-0-21` branches):
 
 - [`qwen3-burn`](https://github.com/eidolons-ai/qwen3-burn) — hand-coded Qwen3 model
-- [`burn-mlx`](https://github.com/eidolons-ai/burn-mlx) — third-party MLX backend
+- [`burn-mlx`](https://github.com/eidolons-ai/burn-mlx) — third-party MLX backend (this repo's ONNX
+  work added `gather_nd` + a u32 index-readback fix here)
 
-During local development (before those branches are published) the workspace redirects both to
-local checkouts via `[patch]` entries in `bench/burn/Cargo.toml`. Adjust those paths, or point the
-member `git`/`branch` refs at `burn-0-21`, to suit your setup.
+To hack on either locally, add a `[patch."https://github.com/eidolons-ai/<repo>.git"]` entry
+pointing at a local checkout in `bench/burn/Cargo.toml`.
 
 ## Running individual benchmarks
 
 The hand-coded binary is built once per backend feature and copied to a per-backend name by
-`setup.sh` (`qwen-handcoded-{wgpu,metal,mlx,flex}`); the ONNX binary is `qwen-onnx-flex`. Each
+`setup.sh` (`qwen-handcoded-{wgpu,metal,mlx,flex}`); the ONNX binary is `qwen-onnx-mlx`. Each
 accepts the same arguments:
 
 ```bash
@@ -128,8 +130,8 @@ python bench/mlx_bench.py --model-path "$MODEL_PATH" --prompts-file bench/prompt
 # Burn/Metal (hand-coded)
 bench/burn/target/release/qwen-handcoded-metal --model-path "$MODEL_PATH" --prompts-file bench/prompts.json --output burn_metal_results.json
 
-# Burn/ONNX (Flex CPU)
-bench/burn/target/release/qwen-onnx-flex --model-path "$MODEL_PATH" --prompts-file bench/prompts.json --output burn_onnx_results.json
+# Burn/ONNX (MLX GPU)
+bench/burn/target/release/qwen-onnx-mlx --model-path "$MODEL_PATH" --prompts-file bench/prompts.json --output burn_onnx_results.json
 
 # Swift
 $(cd bench/swift && swift build -c release --show-bin-path)/mlx-swift-bench --model-path "$MODEL_PATH" --prompts-file bench/prompts.json --output swift_results.json
@@ -140,7 +142,7 @@ To build a single case manually:
 ```bash
 cd bench/burn
 cargo build --release -p qwen-handcoded --features metal   # or wgpu | mlx | flex
-cargo build --release -p qwen-onnx      --features flex     # requires ./bench/get_qwen_onnx.py first
+cargo build --release -p qwen-onnx      --features mlx      # requires ./bench/get_qwen_onnx.py first
 ```
 
 ## Comparing results

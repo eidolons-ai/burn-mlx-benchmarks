@@ -77,10 +77,10 @@ if [ -n "$METALLIB" ]; then
 fi
 echo ""
 
-# --- ONNX case: export the cacheless graph, then build (Flex CPU backend) ---
-# The ONNX-imported model runs on the Flex backend (see README methodology:
-# cubecl Metal/wgpu cannot load its Native-bool constant, and the MLX backend
-# lacks gather_nd). Flex is a first-class pure-Rust CPU backend in burn 0.21.
+# --- ONNX case: export the cacheless graph, then build (MLX GPU backend) ---
+# The ONNX-imported model runs on the MLX backend for a same-backend comparison
+# against the hand-coded burn-mlx case. (cubecl Metal/wgpu cannot load its
+# Native-bool constant; --features flex also works as a CPU fallback.)
 ONNX_ARTIFACT="$WS/qwen-onnx/artifacts/qwen3-0_6b_opset16.onnx"
 if [ ! -f "$ONNX_ARTIFACT" ]; then
     echo "Exporting Qwen3-0.6B to ONNX (this downloads torch/transformers via uv)..."
@@ -89,11 +89,15 @@ else
     echo "ONNX artifact already present: $ONNX_ARTIFACT"
 fi
 
-echo "Building qwen-onnx (--features flex)..."
-(cd "$WS" && cargo build --release -p qwen-onnx --features flex 2>&1 | tail -1)
+echo "Building qwen-onnx (--features mlx)..."
+(cd "$WS" && cargo build --release -p qwen-onnx --features mlx 2>&1 | tail -1)
 if [ -f "$REL/qwen-onnx" ]; then
-    cp -f "$REL/qwen-onnx" "$REL/qwen-onnx-flex"
-    echo "  qwen-onnx-flex: OK"
+    cp -f "$REL/qwen-onnx" "$REL/qwen-onnx-mlx"
+    # MLX needs its Metal shader library colocated (also copied above for the
+    # hand-coded mlx case, but repeat in case only the ONNX case is rebuilt).
+    ONNX_METALLIB="$(find "$WS/target/release/build" -path '*mlx-sys-burn-*/out/build/lib/mlx.metallib' -print -quit 2>/dev/null)"
+    [ -n "$ONNX_METALLIB" ] && cp -f "$ONNX_METALLIB" "$REL/mlx.metallib"
+    echo "  qwen-onnx-mlx: OK"
 else
     echo "  WARNING: qwen-onnx build may have failed."
 fi

@@ -63,9 +63,9 @@ run_bin "$REL/qwen-handcoded-metal" burn_metal_results.json "Burn/Metal (hand-co
 run_bin "$REL/qwen-handcoded-mlx"   burn_mlx_results.json   "Burn/MLX (hand-coded)"
 run_bin "$REL/qwen-handcoded-flex"  burn_flex_results.json  "Burn/Flex CPU (hand-coded)"
 
-# ONNX-imported model (Flex CPU backend). Cacheless graph: TTFT/prefill +
+# ONNX-imported model (MLX GPU backend). Cacheless graph: TTFT/prefill +
 # token parity only (see report methodology note).
-run_bin "$REL/qwen-onnx-flex"       burn_onnx_results.json  "Burn/ONNX (Flex CPU)"
+run_bin "$REL/qwen-onnx-mlx"        burn_onnx_results.json  "Burn/ONNX (MLX GPU)"
 
 # --- MLX Swift benchmark ---
 SWIFT_BIN="$BENCH_DIR/swift/.build/xcode/Build/Products/Release/mlx-swift-bench"
